@@ -1,34 +1,39 @@
-from fastapi import FastAPI, Query
-from app.db.database import engine
-from app.db.session import get_db
-from app.db.base import Base
-from app.db.models import Contact
-from app.api import contacts
-from sqlalchemy.orm import sessionmaker, Session
-from datetime import datetime, timedelta, date
+from fastapi import FastAPI, Query, Depends, HTTPException
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy import extract
+from datetime import date, timedelta
+from typing import List
 
+from app.db.database import engine, Base, get_db
+from app.db.models import Contact
+from app.routes import contacts as contacts_router, auth as auth_router
+from app.core.auth import auth_service
+from app.schemas import Contact as ContactSchema, User  # Import schema for response model and User
+
+# Create FastAPI app
 app = FastAPI()
 
-# Include your contacts router in the app
-app.include_router(contacts.router)
+# Include routers
+app.include_router(auth_router.router, prefix='/api')
+app.include_router(contacts_router.router, prefix='/api')
 
 # Create session maker
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
+# Root route
 @app.get("/")
 def welcome():
     return {"message": "Welcome to my FastAPI Contacts application!"}
 
-@app.get("/contacts/search/")
+# Search contacts endpoint
+@app.get("/contacts/search/", response_model=List[ContactSchema])
 def search_contacts(
-    name: str = Query(None),
-    surname: str = Query(None),
-    email: str = Query(None)
+    name: str = Query(None, description="Filter contacts by first name"),
+    surname: str = Query(None, description="Filter contacts by last name"),
+    email: str = Query(None, description="Filter contacts by email"),
+    current_user: User = Depends(auth_service.get_current_user)  # Ensure user is authorized
 ):
-    # Create a session
     with SessionLocal() as db:
-        # Define filters based on query parameters
         filters = []
         if name:
             filters.append(Contact.first_name.ilike(f"%{name}%"))
@@ -37,7 +42,6 @@ def search_contacts(
         if email:
             filters.append(Contact.email.ilike(f"%{email}%"))
 
-        # Execute the query
         if filters:
             query = db.query(Contact).filter(*filters)
         else:
@@ -47,9 +51,11 @@ def search_contacts(
 
     return contacts
 
-# Define upcoming_birthdays endpoint
-@app.get("/contacts/birthdays/")
-def upcoming_birthdays():
+# Upcoming birthdays endpoint
+@app.get("/contacts/birthdays/", response_model=List[ContactSchema])
+def upcoming_birthdays(
+    current_user: User = Depends(auth_service.get_current_user)  # Ensure user is authorized
+):
     # Calculate dates for the next 7 days
     start_date = date.today()
     end_date = start_date + timedelta(days=7)
@@ -60,9 +66,7 @@ def upcoming_birthdays():
     end_month = end_date.month
     end_day = end_date.day
 
-    # Create a session
     with SessionLocal() as db:
-        # Query contacts whose birthday month and day fall within the next 7 days
         query = db.query(Contact).filter(
             (
                 (extract('month', Contact.birthday) == start_month) & (extract('day', Contact.birthday) >= start_day)
@@ -75,6 +79,7 @@ def upcoming_birthdays():
 
     return contacts
 
+# Run the FastAPI application
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
