@@ -1,25 +1,31 @@
-from typing import Optional
+from typing import Optional, Union
 from jose import JWTError, jwt
+import bcrypt
 from fastapi import HTTPException, status, Depends
 from fastapi.security import OAuth2PasswordBearer
 from passlib.context import CryptContext
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from app.db.database import get_db
+from app.core.config import settings
 from app.repository import users as repository_users
-from app.core.config import settings  # Importing settings from your project's config
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
 
 class Auth:
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-    SECRET_KEY = settings.SECRET_KEY  # Fetching SECRET_KEY from settings
-    ALGORITHM = settings.ALGORITHM  # Fetching ALGORITHM from settings
-    oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login")
+    def __init__(self):
+        self.pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        self.SECRET_KEY = settings.SECRET_KEY
+        self.ALGORITHM = settings.ALGORITHM
 
     def verify_password(self, plain_password, hashed_password):
         return self.pwd_context.verify(plain_password, hashed_password)
 
-    def get_password_hash(self, password: str):
-        return self.pwd_context.hash(password)
+    def get_password_hash(self, password: Union[str, bytes]) -> str:
+        if isinstance(password, str):
+            password = password.encode('utf-8')  # Convert string to bytes
+        hashed_password = bcrypt.hashpw(password, bcrypt.gensalt())
+        return hashed_password.decode('utf-8')  # Convert bytes to string for storage
 
     def create_access_token(self, data: dict, expires_delta: Optional[float] = None):
         to_encode = data.copy()
@@ -66,13 +72,22 @@ class Auth:
                     raise credentials_exception
             else:
                 raise credentials_exception
-        except JWTError as e:
+        except JWTError:
             raise credentials_exception
 
         user = repository_users.get_user_by_email(email, db)
         if user is None:
             raise credentials_exception
         return user
+    
+    def authenticate_user(self, db: Session, username: str, password: str):
+        user = repository_users.get_user_by_username(db, username)
+        if not user:
+            return False
+        if not self.verify_password(password, user.hashed_password):
+            return False
+        return user
 
 auth_service = Auth()
+
 

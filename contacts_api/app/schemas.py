@@ -26,7 +26,7 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     password: str = Field(..., min_length=6, max_length=10)
 
-class UserModel(BaseModel):
+class UserModel(UserCreate):
     id: int
     username: str = Field(..., min_length=5, max_length=16)
     email: EmailStr
