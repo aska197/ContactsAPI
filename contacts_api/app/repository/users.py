@@ -3,15 +3,15 @@ from libgravatar import Gravatar
 from sqlalchemy.orm import Session
 from app.db.models import User
 from app.schemas import UserModel
+from app.core.auth import auth_service  # Assuming auth_service is used for password hashing
 
 def get_user_by_email(email: str, db: Session) -> User:
     return db.query(User).filter(User.email == email).first()
 
-def get_user_by_username(db: Session, username: str):
+def get_user_by_username(db: Session, username: str) -> User:
     return db.query(User).filter(User.username == username).first()
 
 def create_user(body: UserModel, db: Session) -> User:
-    from app.core.auth import auth_service  # Import moved inside function
     avatar = None
     try:
         g = Gravatar(body.email)

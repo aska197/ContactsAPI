@@ -27,5 +27,5 @@ class User(Base):
     refresh_token = Column(String(255), nullable=True)
 
     contacts = relationship("Contact", back_populates="user", cascade="all, delete-orphan")  # Relationship to the Contact model
-
+       
 Base.metadata.create_all(bind=engine)

@@ -1,16 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from typing import List
 from sqlalchemy.orm import Session
 from app.schemas import ContactCreate, Contact, User
 from app.db.database import get_db
-from app.repository import contacts
+from app.repository import contacts, users as repository_users
 from app.core.auth import auth_service
+
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
 
 router = APIRouter()
 
 @router.post("/contacts/", response_model=Contact)
+@limiter.limit("5/minute")
 def create_contact(
     contact: ContactCreate, 
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(auth_service.get_current_user)
 ):
@@ -58,3 +65,13 @@ def delete_contact(
     if db_contact is None:
         raise HTTPException(status_code=404, detail="Contact not found")
     return db_contact
+
+@router.get("/verify-email")
+def verify_email(token: str, db: Session = Depends(get_db)):
+    email = auth_service.decode_refresh_token(token)
+    user = repository_users.get_user_by_email(email, db)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token or user does not exist")
+    user.is_verified = True
+    db.commit()
+    return {"message": "Email verified successfully"}

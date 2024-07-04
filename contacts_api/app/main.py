@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Query, Depends, HTTPException
+from fastapi import FastAPI, Query, Depends, HTTPException, Request
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import extract
 from datetime import date, timedelta
@@ -10,6 +10,13 @@ from app.routes import contacts as contacts_router, auth as auth_router
 from app.core.auth import auth_service
 from app.schemas import Contact as ContactSchema, User  # Import schema for response model and User
 
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
+from fastapi.middleware.cors import CORSMiddleware
+
+limiter = Limiter(key_func=get_remote_address)
+
 # Create FastAPI app
 app = FastAPI()
 
@@ -20,10 +27,19 @@ app.include_router(contacts_router.router, prefix='/api')
 # Create session maker
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Root route
+app.state.limiter = limiter
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Adjust this to your needs
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 @app.get("/")
-def welcome():
-    return {"message": "Welcome to my FastAPI Contacts application!"}
+@limiter.limit("5/minute")
+def index(request: Request):
+    return {"message": "Welcome to my Contacts Project"}
 
 # Search contacts endpoint
 @app.get("/contacts/search/", response_model=List[ContactSchema])

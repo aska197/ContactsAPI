@@ -17,7 +17,7 @@ class Contact(ContactBase):
     id: int
 
     class Config:
-        orm_mode = True
+        from_attributes = True  # Updated to Pydantic V2
 
 class UserBase(BaseModel):
     username: str = Field(..., min_length=5, max_length=16)
@@ -34,7 +34,7 @@ class UserModel(UserCreate):
     avatar: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True  # Updated to Pydantic V2
 
 class User(UserBase):
     id: int
@@ -42,7 +42,7 @@ class User(UserBase):
     avatar: Optional[str] = None
 
     class Config:
-        orm_mode = True
+        from_attributes = True  # Updated to Pydantic V2
 
 class UserResponse(BaseModel):
     user: User

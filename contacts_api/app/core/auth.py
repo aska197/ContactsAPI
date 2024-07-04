@@ -19,14 +19,11 @@ class Auth:
         self.ALGORITHM = settings.ALGORITHM
 
     def verify_password(self, plain_password, hashed_password):
-        return self.pwd_context.verify(plain_password, hashed_password)
+        return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
 
-    def get_password_hash(self, password: Union[str, bytes]) -> str:
-        if isinstance(password, str):
-            password = password.encode('utf-8')  # Convert string to bytes
-        hashed_password = bcrypt.hashpw(password, bcrypt.gensalt())
-        return hashed_password.decode('utf-8')  # Convert bytes to string for storage
-
+    def get_password_hash(self, password: str) -> str:
+        return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    
     def create_access_token(self, data: dict, expires_delta: Optional[float] = None):
         to_encode = data.copy()
         if expires_delta:
@@ -81,13 +78,14 @@ class Auth:
         return user
     
     def authenticate_user(self, db: Session, username: str, password: str):
-        user = repository_users.get_user_by_username(db, username)
+        user = repository_users.get_user_by_email(username, db)  # Corrected to pass username instead of db first
         if not user:
             return False
-        if not self.verify_password(password, user.hashed_password):
+        if not self.verify_password(password, user.password):
             return False
         return user
 
 auth_service = Auth()
+
 
 
