@@ -39,6 +39,14 @@ app.add_middleware(
 @app.get("/")
 @limiter.limit("5/minute")
 def index(request: Request):
+    """
+    Endpoint to retrieve a welcome message for the Contacts Project.
+
+    :param request: The request object.
+    :type request: Request
+    :return: A dictionary with a welcome message.
+    :rtype: dict
+    """
     return {"message": "Welcome to my Contacts Project"}
 
 # Search contacts endpoint
@@ -49,6 +57,21 @@ def search_contacts(
     email: str = Query(None, description="Filter contacts by email"),
     current_user: User = Depends(auth_service.get_current_user)  # Ensure user is authorized
 ):
+    """
+    Search contacts based on provided filters.
+
+    :param name: Filter contacts by first name.
+    :type name: str, optional
+    :param surname: Filter contacts by last name.
+    :type surname: str, optional
+    :param email: Filter contacts by email.
+    :type email: str, optional
+    :param current_user: The current authenticated user.
+    :type current_user: User
+    :raises HTTPException 401: If user authentication fails.
+    :return: A list of contacts matching the specified filters.
+    :rtype: List[ContactSchema]
+    """
     with SessionLocal() as db:
         filters = []
         if name:
@@ -72,6 +95,15 @@ def search_contacts(
 def upcoming_birthdays(
     current_user: User = Depends(auth_service.get_current_user)  # Ensure user is authorized
 ):
+    """
+    Retrieve contacts with upcoming birthdays within the next 7 days.
+
+    :param current_user: The current authenticated user.
+    :type current_user: User
+    :raises HTTPException 401: If user authentication fails.
+    :return: A list of contacts with upcoming birthdays.
+    :rtype: List[ContactSchema]
+    """
     # Calculate dates for the next 7 days
     start_date = date.today()
     end_date = start_date + timedelta(days=7)

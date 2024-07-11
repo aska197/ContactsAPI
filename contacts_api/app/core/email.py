@@ -5,6 +5,12 @@ import asyncio
 from pathlib import Path  # Import Path from pathlib module
 
 class EmailSchema(BaseModel):
+    """
+    Schema representing an email address.
+
+    :param email: The email address.
+    :type email: EmailStr
+    """
     email: EmailStr
 
 # Define the necessary fields for ConnectionConfig based on your settings
@@ -22,6 +28,14 @@ conf = ConnectionConfig(
 )
 
 def send_email(email: EmailSchema, token: str):
+    """
+    Send an email for email verification.
+
+    :param email: The email schema containing the recipient's email address.
+    :type email: EmailSchema
+    :param token: The verification token to include in the email link.
+    :type token: str
+    """
     message = MessageSchema(
         subject="Email Verification",
         recipients=[email.email],
@@ -30,4 +44,5 @@ def send_email(email: EmailSchema, token: str):
     )
     fm = FastMail(conf)
     asyncio.run(fm.send_message(message))
+
 
