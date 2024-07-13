@@ -1,91 +1,166 @@
 import pytest
-from fastapi import status
+from unittest.mock import MagicMock, patch
 from app.db.models import User
-from starlette.testclient import TestClient
-from app.repository import users as repository_users
 from app.core.auth import auth_service
-from sqlalchemy.orm import Session
+from app.schemas import ContactCreate, Contact
+from app.repository import contacts, users as repository_users
 
-@pytest.mark.usefixtures("db")
-class TestContactEndpoints:
+@pytest.fixture()
+def token(client, user, session, monkeypatch):
+    # Mock any necessary services or methods
+    mock_send_email = MagicMock()
+    monkeypatch.setattr("app.routes.auth.send_email", mock_send_email)
+    
+    # Create and confirm user
+    client.post("/api/auth/signup", json=user)
+    current_user: User = session.query(User).filter(User.email == user.get('email')).first()
+    current_user.confirmed = True
+    session.commit()
+    
+    # Get login token
+    response = client.post(
+        "/api/auth/login",
+        data={"username": user.get('email'), "password": user.get('password')}
+    )
+    data = response.json()
+    return data["access_token"]
 
-    def test_create_contact(self, client: TestClient, db: Session):
-        # Test creating a contact
-        user = repository_users.create_user(db, username="testuser", email="test@example.com", password="password")
-        login_response = client.post("/auth/login", data={"username": "testuser", "password": "password"})
-        access_token = login_response.json()["access_token"]
+def test_create_contact(client, token):
+    with patch.object(contacts, 'create_contact') as create_contact_mock:
+        create_contact_mock.return_value = Contact(id=1, **{
+            "name": "John Doe",
+            "email": "johndoe@example.com",
+            "phone": "1234567890"
+        })
+        response = client.post(
+            "/api/contacts/",
+            json={"name": "John Doe", "email": "johndoe@example.com", "phone": "1234567890"},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["name"] == "John Doe"
+        assert "id" in data
 
-        headers = {"Authorization": f"Bearer {access_token}"}
-        contact_data = {"name": "John Doe", "email": "john.doe@example.com"}
+def test_read_contacts(client, token):
+    with patch.object(contacts, 'get_contacts') as get_contacts_mock:
+        get_contacts_mock.return_value = [
+            Contact(id=1, **{"name": "John Doe", "email": "johndoe@example.com", "phone": "1234567890"})
+        ]
+        response = client.get(
+            "/api/contacts/",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert isinstance(data, list)
+        assert data[0]["name"] == "John Doe"
+        assert "id" in data[0]
 
-        response = client.post("/contacts/", json=contact_data, headers=headers)
-        assert response.status_code == status.HTTP_201_CREATED
-        assert response.json()["name"] == "John Doe"
-        assert response.json()["email"] == "john.doe@example.com"
+def test_read_contact(client, token):
+    with patch.object(contacts, 'get_contact') as get_contact_mock:
+        get_contact_mock.return_value = Contact(id=1, **{
+            "name": "John Doe",
+            "email": "johndoe@example.com",
+            "phone": "1234567890"
+        })
+        response = client.get(
+            "/api/contacts/1",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["name"] == "John Doe"
+        assert "id" in data
 
-    def test_read_contacts(self, client: TestClient, db: Session):
-        # Test reading contacts
-        user = repository_users.create_user(db, username="testuser", email="test@example.com", password="password")
-        login_response = client.post("/auth/login", data={"username": "testuser", "password": "password"})
-        access_token = login_response.json()["access_token"]
+def test_read_contact_not_found(client, token):
+    with patch.object(contacts, 'get_contact') as get_contact_mock:
+        get_contact_mock.return_value = None
+        response = client.get(
+            "/api/contacts/2",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 404, response.text
+        data = response.json()
+        assert data["detail"] == "Contact not found"
 
-        headers = {"Authorization": f"Bearer {access_token}"}
-        response = client.get("/contacts/", headers=headers)
-        assert response.status_code == status.HTTP_200_OK
-        assert isinstance(response.json(), list)
+def test_update_contact(client, token):
+    with patch.object(contacts, 'update_contact') as update_contact_mock:
+        update_contact_mock.return_value = Contact(id=1, **{
+            "name": "Jane Doe",
+            "email": "janedoe@example.com",
+            "phone": "0987654321"
+        })
+        response = client.put(
+            "/api/contacts/1",
+            json={"name": "Jane Doe", "email": "janedoe@example.com", "phone": "0987654321"},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["name"] == "Jane Doe"
+        assert "id" in data
 
-    def test_read_contact(self, client: TestClient, db: Session):
-        # Test reading a specific contact
-        user = repository_users.create_user(db, username="testuser", email="test@example.com", password="password")
-        login_response = client.post("/auth/login", data={"username": "testuser", "password": "password"})
-        access_token = login_response.json()["access_token"]
+def test_update_contact_not_found(client, token):
+    with patch.object(contacts, 'update_contact') as update_contact_mock:
+        update_contact_mock.return_value = None
+        response = client.put(
+            "/api/contacts/2",
+            json={"name": "Jane Doe", "email": "janedoe@example.com", "phone": "0987654321"},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 404, response.text
+        data = response.json()
+        assert data["detail"] == "Contact not found"
 
-        headers = {"Authorization": f"Bearer {access_token}"}
-        response_create = client.post("/contacts/", json={"name": "Jane Doe", "email": "jane.doe@example.com"}, headers=headers)
-        contact_id = response_create.json()["id"]
+def test_delete_contact(client, token):
+    with patch.object(contacts, 'delete_contact') as delete_contact_mock:
+        delete_contact_mock.return_value = Contact(id=1, **{
+            "name": "Jane Doe",
+            "email": "janedoe@example.com",
+            "phone": "0987654321"
+        })
+        response = client.delete(
+            "/api/contacts/1",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["name"] == "Jane Doe"
+        assert "id" in data
 
-        response_read = client.get(f"/contacts/{contact_id}", headers=headers)
-        assert response_read.status_code == status.HTTP_200_OK
-        assert response_read.json()["name"] == "Jane Doe"
-        assert response_read.json()["email"] == "jane.doe@example.com"
+def test_delete_contact_not_found(client, token):
+    with patch.object(contacts, 'delete_contact') as delete_contact_mock:
+        delete_contact_mock.return_value = None
+        response = client.delete(
+            "/api/contacts/2",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert response.status_code == 404, response.text
+        data = response.json()
+        assert data["detail"] == "Contact not found"
 
-    def test_update_contact(self, client: TestClient, db: Session):
-        # Test updating a contact
-        user = repository_users.create_user(db, username="testuser", email="test@example.com", password="password")
-        login_response = client.post("/auth/login", data={"username": "testuser", "password": "password"})
-        access_token = login_response.json()["access_token"]
+def test_verify_email(client):
+    with patch.object(auth_service, 'decode_refresh_token') as decode_token_mock:
+        decode_token_mock.return_value = "testuser@example.com"
+        with patch.object(repository_users, 'get_user_by_email') as get_user_mock:
+            get_user_mock.return_value = User(email="testuser@example.com", is_verified=False)
+            response = client.get(
+                "/api/verify-email",
+                params={"token": "valid_token"}
+            )
+            assert response.status_code == 200, response.text
+            data = response.json()
+            assert data["message"] == "Email verified successfully"
 
-        headers = {"Authorization": f"Bearer {access_token}"}
-        response_create = client.post("/contacts/", json={"name": "Jane Doe", "email": "jane.doe@example.com"}, headers=headers)
-        contact_id = response_create.json()["id"]
-
-        updated_data = {"name": "Updated Name"}
-        response_update = client.put(f"/contacts/{contact_id}", json=updated_data, headers=headers)
-        assert response_update.status_code == status.HTTP_200_OK
-        assert response_update.json()["name"] == "Updated Name"
-        assert response_update.json()["email"] == "jane.doe@example.com"  # Ensure email remains unchanged
-
-    def test_delete_contact(self, client: TestClient, db: Session):
-        # Test deleting a contact
-        user = repository_users.create_user(db, username="testuser", email="test@example.com", password="password")
-        login_response = client.post("/auth/login", data={"username": "testuser", "password": "password"})
-        access_token = login_response.json()["access_token"]
-
-        headers = {"Authorization": f"Bearer {access_token}"}
-        response_create = client.post("/contacts/", json={"name": "John Doe", "email": "john.doe@example.com"}, headers=headers)
-        contact_id = response_create.json()["id"]
-
-        response_delete = client.delete(f"/contacts/{contact_id}", headers=headers)
-        assert response_delete.status_code == status.HTTP_200_OK
-        assert response_delete.json()["name"] == "John Doe"
-        assert response_delete.json()["email"] == "john.doe@example.com"
-
-    def test_verify_email(self, client: TestClient, db: Session):
-        # Test email verification endpoint
-        user = repository_users.create_user(db, username="testuser", email="test@example.com", password="password")
-        token = auth_service.create_refresh_token("test@example.com")
-
-        response = client.get(f"/verify-email?token={token}")
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json()["message"] == "Email verified successfully"
+def test_verify_email_invalid_token(client):
+    with patch.object(auth_service, 'decode_refresh_token') as decode_token_mock:
+        decode_token_mock.return_value = None
+        response = client.get(
+            "/api/verify-email",
+            params={"token": "invalid_token"}
+        )
+        assert response.status_code == 400, response.text
+        data = response.json()
+        assert data["detail"] == "Invalid token or user does not exist"
 
